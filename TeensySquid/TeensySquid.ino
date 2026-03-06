@@ -22,7 +22,7 @@ static const StrandType STRAND_TYPES[9] = {
 };
 
 static const uint8_t NODES_PER_STRAND[9] = {
-  10, 4, 7, 10, 9, 10, 10, 10, 10
+  10, 4, 8, 10, 8, 10, 10, 10, 10  // large strands (2, 4) have 8 nodes each
 };
 
 static const uint8_t SMALL_RING_LEDS[3] = {15, 10, 5};
@@ -31,15 +31,35 @@ static const uint8_t LARGE_RING_LEDS[3] = {22, 14, 8};
 static const uint8_t SMALL_NODE_LEDS = 5 + 10 + 15;
 static const uint8_t LARGE_NODE_LEDS = 8 + 14 + 22;
 
+// LED count per strand: nodes * LEDs per node (small=30, large=44)
 static const uint16_t STRAND_LEDS[9] = {
-  10 * SMALL_NODE_LEDS, 0, 0, 0, 0, 0, 0, 0, 0
+  10 * SMALL_NODE_LEDS,   // strand 0: 300
+  4 * SMALL_NODE_LEDS,    // strand 1: 120
+  8 * LARGE_NODE_LEDS,    // strand 2: 352 (8 large nodes)
+  10 * SMALL_NODE_LEDS,   // strand 3: 300
+  8 * LARGE_NODE_LEDS,    // strand 4: 352 (8 large nodes)
+  10 * SMALL_NODE_LEDS,   // strand 5: 300
+  10 * SMALL_NODE_LEDS,   // strand 6: 300
+  10 * SMALL_NODE_LEDS,   // strand 7: 300
+  10 * SMALL_NODE_LEDS    // strand 8: 300
 };
 
-static const uint16_t STRAND_OFFSET[9] = {0, 0, 0, 0, 0, 0, 0, 0, 0};
+// Start index of each strand in the single strip (daisy chain)
+static const uint16_t STRAND_OFFSET[9] = {
+  0,     // 0
+  300,   // 1  (0+300)
+  420,   // 2  (300+120)
+  772,   // 3  (420+352)
+  1072,  // 4  (772+300)
+  1424,  // 5  (1072+352)
+  1724,  // 6  (1424+300)
+  2024,  // 7  (1724+300)
+  2324   // 8  (2024+300)
+};
 
-static const uint16_t TOTAL_LEDS = 10 * SMALL_NODE_LEDS;
+static const uint16_t TOTAL_LEDS = 2624;
 
-// DotStar strip: 300 LEDs, data pin 0, clock pin 9, BGR order (common for SK9822)
+// DotStar strip: 2624 LEDs (9 strands daisy-chained), data pin 0, clock pin 9, BGR order (common for SK9822)
 Adafruit_DotStar strip(TOTAL_LEDS, DATA_PIN, CLOCK_PIN, DOTSTAR_BGR);
 
 // ---------------------------------------------------------------------------
@@ -128,11 +148,6 @@ void applyFrameFromBuffer(const uint8_t *buf, uint16_t len) {
   for (uint8_t i = 0; i < nodeCount; ++i) {
     uint8_t strandIn = buf[offset++];
     uint8_t nodeIndexIn = buf[offset++];
-
-    if (strandIn != 0) {
-      offset += 9;
-      continue;
-    }
 
     for (uint8_t ring = 0; ring < 3; ++ring) {
       uint8_t r = buf[offset++];
