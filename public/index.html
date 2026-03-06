@@ -1,0 +1,205 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Squid LED Controller</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <div id="app">
+    <header>
+      <h1>Squid LED Controller</h1>
+    </header>
+    <main>
+      <section id="canvas-section">
+        <canvas id="squid-canvas"></canvas>
+      </section>
+      <section id="controls">
+        <div class="control-group">
+          <h2>Global</h2>
+          <label>
+            Global brightness (packet header; strip.setBrightness on Teensy)
+            <input type="range" id="max-brightness" min="0" max="60" value="30" />
+            <span id="max-brightness-value">30</span>
+          </label>
+          <label class="inline">
+            <input type="checkbox" id="test-mode" />
+            Test mode (solid ring colours from pickers, no animation)
+          </label>
+          <label class="inline">
+            <input type="checkbox" id="dual-view" />
+            Show back and front view (side by side)
+          </label>
+          <label class="inline">
+            <input type="checkbox" id="strand-debug" />
+            Show strand index and node labels (S0, S1… + lines)
+          </label>
+        </div>
+
+        <div class="control-group">
+          <h2>Ring colours</h2>
+          <label>
+            Inner ring colour
+            <input type="color" id="inner-color" value="#4f46e5" />
+          </label>
+          <label>
+            Middle ring colour
+            <input type="color" id="middle-color" value="#22c55e" />
+          </label>
+          <label>
+            Outer ring colour
+            <input type="color" id="outer-color" value="#eab308" />
+          </label>
+          <label>
+            Colour variation (flip some nodes)
+            <input type="range" id="color-variation" min="0" max="100" value="0" />
+            <span id="color-variation-value">0.00</span>
+          </label>
+        </div>
+
+        <div class="control-group">
+          <h2>Noise</h2>
+          <label>
+            Noise type
+            <select id="noise-type">
+              <option value="fbm" selected>fBm (smooth)</option>
+              <option value="sine">Sine waves</option>
+              <option value="perlin">Perlin</option>
+              <option value="basic">Basic value noise</option>
+              <option value="ridged">Ridged</option>
+              <option value="warp">Domain warp</option>
+            </select>
+          </label>
+          <label>
+            Secondary noise (overlay)
+            <select id="noise-type2">
+              <option value="none" selected>None</option>
+              <option value="fbm">fBm (smooth)</option>
+              <option value="sine">Sine waves</option>
+              <option value="perlin">Perlin</option>
+              <option value="basic">Basic value noise</option>
+              <option value="ridged">Ridged</option>
+              <option value="warp">Domain warp</option>
+            </select>
+          </label>
+          <label>
+            Noise scale
+            <input type="range" id="noise-scale" min="5" max="200" value="60" />
+            <span id="noise-scale-value">0.60</span>
+          </label>
+          <label>
+            Noise speed
+            <input type="range" id="noise-speed" min="0" max="200" value="70" />
+            <span id="noise-speed-value">0.70</span>
+          </label>
+          <label>
+            Black level
+            <input type="range" id="black-level" min="0" max="100" value="20" />
+            <span id="black-level-value">0.20</span>
+          </label>
+          <label>
+            Off threshold (more off)
+            <input type="range" id="noise-cutoff" min="0" max="95" value="15" />
+            <span id="noise-cutoff-value">0.15</span>
+          </label>
+          <canvas id="noise-viz" height="90"></canvas>
+          <label>
+            Smooth fades
+            <input type="range" id="noise-smooth" min="0" max="100" value="35" />
+            <span id="noise-smooth-value">0.35</span>
+          </label>
+          <label>
+            Noise blend / overlay
+            <input type="range" id="noise-blend" min="0" max="100" value="0" />
+            <span id="noise-blend-value">0.00</span>
+          </label>
+          <label>
+            Contrast
+            <input type="range" id="noise-contrast" min="0" max="250" value="140" />
+            <span id="noise-contrast-value">1.40</span>
+          </label>
+          <label>
+            Gamma
+            <input type="range" id="noise-gamma" min="10" max="300" value="120" />
+            <span id="noise-gamma-value">1.20</span>
+          </label>
+        </div>
+
+        <div class="control-group">
+          <h2>Effector</h2>
+          <label class="inline">
+            <input type="radio" name="eff-mode" id="eff-mode-mouse" checked />
+            Mouse controlled
+          </label>
+          <label class="inline">
+            <input type="radio" name="eff-mode" id="eff-mode-auto" />
+            Auto wanderers
+          </label>
+          <label>
+            Wanderer speed
+            <input type="range" id="wander-speed" min="0" max="200" value="80" />
+            <span id="wander-speed-value">0.80</span>
+          </label>
+          <label>
+            Wanderer count
+            <input type="range" id="wander-count" min="1" max="10" value="3" />
+            <span id="wander-count-value">3</span>
+          </label>
+          <label>
+            Radius
+            <input type="range" id="eff-radius" min="5" max="100" value="25" />
+            <span id="eff-radius-value">0.25</span>
+          </label>
+          <label>
+            Strength
+            <input type="range" id="eff-strength" min="0" max="100" value="40" />
+            <span id="eff-strength-value">0.40</span>
+          </label>
+        </div>
+
+        <div class="control-group">
+          <h2>Audio modulation</h2>
+          <label>
+            Audio file (looped)
+            <input type="file" id="audio-file" accept="audio/*" />
+          </label>
+          <label class="inline">
+            <input type="checkbox" id="audio-enable" />
+            Use audio to drive pulsation
+          </label>
+          <button id="audio-stop" type="button">Stop audio</button>
+          <canvas id="audio-viz" height="90"></canvas>
+          <label>
+            Audio amplitude
+            <input type="range" id="audio-amp" min="50" max="300" value="130" />
+            <span id="audio-amp-value">1.30</span>
+          </label>
+          <label>
+            Audio neighbour spread
+            <input type="range" id="audio-neighbor" min="0" max="100" value="40" />
+            <span id="audio-neighbor-value">0.40</span>
+          </label>
+          <label>
+            Audio region count
+            <input type="range" id="audio-region-count" min="3" max="12" value="6" />
+            <span id="audio-region-count-value">6</span>
+          </label>
+          <label>
+            Audio↔Noise blend (more audio)
+            <input type="range" id="audio-blend" min="0" max="100" value="55" />
+            <span id="audio-blend-value">0.55</span>
+          </label>
+          <label class="inline">
+            <input type="checkbox" id="audio-debug" />
+            Show audio region overlay
+          </label>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>
+
