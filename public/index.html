@@ -19,7 +19,7 @@
         <div class="control-group">
           <h2>Global</h2>
           <label>
-            Global brightness (packet header; strip.setBrightness on Teensy)
+            Global brightness (packet header; per-pixel clamp on Teensy, 0–60)
             <input type="range" id="max-brightness" min="0" max="60" value="30" />
             <span id="max-brightness-value">30</span>
           </label>
@@ -27,6 +27,27 @@
             <input type="checkbox" id="test-mode" />
             Test mode (solid ring colours from pickers, no animation)
           </label>
+          <details class="strand-test-details">
+            <summary>Individual strand tests</summary>
+            <div class="strand-test-inner">
+              <p class="control-hint">Enable then check strands to light only those; unchecked strands stay off. Uses the inner / middle / outer ring colours from Ring colours above.</p>
+              <label class="inline">
+                <input type="checkbox" id="strand-test-enable" />
+                Enable strand test
+              </label>
+              <div class="strand-test-checkboxes">
+                <label class="inline"><input type="checkbox" id="strand-test-0" /> S0</label>
+                <label class="inline"><input type="checkbox" id="strand-test-1" /> S1</label>
+                <label class="inline"><input type="checkbox" id="strand-test-2" /> S2</label>
+                <label class="inline"><input type="checkbox" id="strand-test-3" /> S3</label>
+                <label class="inline"><input type="checkbox" id="strand-test-4" /> S4</label>
+                <label class="inline"><input type="checkbox" id="strand-test-5" /> S5</label>
+                <label class="inline"><input type="checkbox" id="strand-test-6" /> S6</label>
+                <label class="inline"><input type="checkbox" id="strand-test-7" /> S7</label>
+                <label class="inline"><input type="checkbox" id="strand-test-8" /> S8</label>
+              </div>
+            </div>
+          </details>
           <label class="inline">
             <input type="checkbox" id="dual-view" />
             Show back and front view (side by side)

@@ -108,6 +108,58 @@ main {
   width: auto;
 }
 
+.control-hint {
+  font-size: 0.8rem;
+  color: #9ca3af;
+  margin: 0 0 0.5rem;
+}
+
+.strand-test-details {
+  margin: 0.5rem 0;
+  border: 1px solid rgba(148, 163, 184, 0.2);
+  border-radius: 8px;
+  background: rgba(2, 6, 23, 0.25);
+}
+
+.strand-test-details summary {
+  padding: 0.4rem 0.6rem;
+  cursor: pointer;
+  list-style: none;
+  font-size: 0.9rem;
+  color: #e5e7eb;
+}
+
+.strand-test-details summary::-webkit-details-marker {
+  display: none;
+}
+
+.strand-test-details summary::before {
+  content: "▸ ";
+  margin-right: 0.25rem;
+  display: inline-block;
+  transition: transform 0.15s ease;
+}
+
+.strand-test-details[open] summary::before {
+  transform: rotate(90deg);
+}
+
+.strand-test-inner {
+  padding: 0.5rem 0.75rem 0.75rem;
+  border-top: 1px solid rgba(148, 163, 184, 0.15);
+}
+
+.strand-test-inner .control-hint {
+  margin-top: 0;
+}
+
+.strand-test-checkboxes {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem 1rem;
+  margin-top: 0.5rem;
+}
+
 .control-group input[type="range"] {
   width: 100%;
 }

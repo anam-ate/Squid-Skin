@@ -1,6 +1,6 @@
 /*
  * Single-strand test: strand 0 only (small nodes).
- * DATA = pin 0, CLK = pin 9.
+ * Pins match main TeensySquid strand 0: DATA = 0, CLK = 9.
  * Each node: inner ring (5 LEDs) = blue, middle (10) = green, outer (15) = red.
  * Overall brightness 30/255.
  */

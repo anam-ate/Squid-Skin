@@ -56,6 +56,16 @@ const controls = {
   testMode: document.getElementById('test-mode'),
   dualView: document.getElementById('dual-view'),
   strandDebug: document.getElementById('strand-debug'),
+  strandTestEnable: document.getElementById('strand-test-enable'),
+  strandTest0: document.getElementById('strand-test-0'),
+  strandTest1: document.getElementById('strand-test-1'),
+  strandTest2: document.getElementById('strand-test-2'),
+  strandTest3: document.getElementById('strand-test-3'),
+  strandTest4: document.getElementById('strand-test-4'),
+  strandTest5: document.getElementById('strand-test-5'),
+  strandTest6: document.getElementById('strand-test-6'),
+  strandTest7: document.getElementById('strand-test-7'),
+  strandTest8: document.getElementById('strand-test-8'),
 };
 
 let nodes = [];
@@ -1196,9 +1206,29 @@ function renderFrame(now) {
       smoothArr[3] *= 0.9;
     }
 
-    // Test mode: solid ring colours from pickers (0–255). Global brightness in packet header only.
+    // Strand test: when enabled, only checked strands light using inner/middle/outer ring colours; others stay off.
     const rings = [];
-    if (controls.testMode && controls.testMode.checked) {
+    const strandTestActive = controls.strandTestEnable?.checked;
+    if (strandTestActive) {
+      const inner = innerBaseColor;
+      const middle = middleBaseColor;
+      const outer = outerBaseColor;
+      const checked = controls[`strandTest${n.pin}`]?.checked;
+      const scalePreview = globalBrightness / 60;
+      const base = [inner, middle, outer];
+      for (let k = 0; k < 3; k++) {
+        const c = base[k];
+        const r = checked ? Math.min(255, Math.round(c.r)) : 0;
+        const g = checked ? Math.min(255, Math.round(c.g)) : 0;
+        const b = checked ? Math.min(255, Math.round(c.b)) : 0;
+        rings.push({
+          r, g, b,
+          pr: Math.round(r * scalePreview),
+          pg: Math.round(g * scalePreview),
+          pb: Math.round(b * scalePreview),
+        });
+      }
+    } else if (controls.testMode && controls.testMode.checked) {
       const inner = innerBaseColor;
       const middle = middleBaseColor;
       const outer = outerBaseColor;

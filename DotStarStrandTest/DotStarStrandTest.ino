@@ -2,7 +2,7 @@
  * Standard RGB strand test using Adafruit DotStar (SK9822/APA102).
  * Exercises every pixel along the strip (pixel-by-pixel walk), not node-by-node.
  *
- * Hardware: 1 chain of 300 LEDs. DATA = pin 0, CLOCK = pin 9.
+ * Hardware: strand 0 only (300 LEDs). DATA = pin 0, CLOCK = pin 9 (matches TeensySquid strand 0).
  * Brightness cap: 60/255 to match main app.
  *
  * Sequence:
