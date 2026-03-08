@@ -1536,10 +1536,13 @@ function renderFrame(now) {
 
   // Send frame to Teensy via WebSocket (globalBrightness in header; colours 0–255 as-is)
   if (ws && ws.readyState === WebSocket.OPEN) {
+    const nodesToSend = globalBrightness === 0
+      ? frameNodes.map((n) => ({ ...n, rings: [{ r: 0, g: 0, b: 0 }, { r: 0, g: 0, b: 0 }, { r: 0, g: 0, b: 0 }] }))
+      : frameNodes;
     ws.send(JSON.stringify({
       frameId: frameId++,
       globalBrightness,
-      nodes: frameNodes,
+      nodes: nodesToSend,
     }));
   }
 

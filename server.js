@@ -77,8 +77,9 @@ wss.on('connection', (ws) => {
     }
     lastSerialSendMs = nowMs;
     const frameId = frameCounter++ & 0xffff;
-    // UI slider 0–60; send that value directly so Teensy cap is 0–60
-    const globalBrightness = Math.max(0, Math.min(60, parseInt(msg.globalBrightness, 10) || 60));
+    // UI slider 0–60; send that value directly so Teensy cap is 0–60 (0 = all off)
+    const raw = parseInt(msg.globalBrightness, 10);
+    const globalBrightness = Number.isNaN(raw) ? 60 : Math.max(0, Math.min(60, raw));
 
     const BYTES_PER_NODE = 2 + 3 * 3;
     const buf = Buffer.alloc(5 + nodeCount * BYTES_PER_NODE);
