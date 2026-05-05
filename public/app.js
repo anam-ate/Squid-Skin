@@ -885,11 +885,56 @@ function setupWebSocket() {
   };
 }
 
+/** RAF handle so we can cancel and restart after mobile suspend / PWA foreground. */
+let renderLoopHandle = 0;
+
+/**
+ * Mobile browsers and iOS standalone PWAs often stop requestAnimationFrame while
+ * backgrounded; the chain may not resume. WebSockets also drop. Restart both when
+ * the page is foregrounded again.
+ */
+function resumeRenderingAndBridge() {
+  cancelAnimationFrame(renderLoopHandle);
+  lastTime = performance.now();
+  renderLoopHandle = requestAnimationFrame(renderFrame);
+  if (!ws || ws.readyState !== WebSocket.OPEN) {
+    setupWebSocket();
+  }
+}
+
 document.addEventListener('visibilitychange', () => {
-  if (document.visibilityState !== 'visible') return;
-  if (ws && (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING)) return;
-  setupWebSocket();
+  if (document.visibilityState === 'visible') {
+    resumeRenderingAndBridge();
+  }
 });
+
+window.addEventListener('focus', () => {
+  if (document.visibilityState === 'visible') {
+    resumeRenderingAndBridge();
+  }
+});
+
+window.addEventListener('pageshow', () => {
+  if (document.visibilityState === 'visible') {
+    resumeRenderingAndBridge();
+  }
+});
+
+window.addEventListener('resize', () => {
+  if (document.visibilityState === 'visible') {
+    resumeRenderingAndBridge();
+  }
+});
+
+/** Keep screen awake while controlling (optional; may require user gesture first). */
+let wakeLockTried = false;
+function tryRequestWakeLock() {
+  if (wakeLockTried || typeof navigator === 'undefined' || !navigator.wakeLock) return;
+  wakeLockTried = true;
+  navigator.wakeLock.request('screen').catch(() => {});
+}
+
+canvas.addEventListener('pointerdown', tryRequestWakeLock, { passive: true });
 
 let lastTime = performance.now();
 let timeAccum = 0;
@@ -919,12 +964,12 @@ function renderFrame(now) {
   ctx.clearRect(0, 0, w, h);
 
   if (!nodes.length || !bounds) {
-    requestAnimationFrame(renderFrame);
+    renderLoopHandle = requestAnimationFrame(renderFrame);
     return;
   }
 
   if (w <= 0 || h <= 0) {
-    requestAnimationFrame(renderFrame);
+    renderLoopHandle = requestAnimationFrame(renderFrame);
     return;
   }
 
@@ -1783,11 +1828,11 @@ function renderFrame(now) {
     }));
   }
 
-  requestAnimationFrame(renderFrame);
+  renderLoopHandle = requestAnimationFrame(renderFrame);
 }
 
 loadNodes().then(() => {
   setupWebSocket();
-  requestAnimationFrame(renderFrame);
+  renderLoopHandle = requestAnimationFrame(renderFrame);
 });
 
