@@ -798,6 +798,9 @@ function recomputeMinNodeDistModel(nodeList) {
 
 async function loadNodes() {
   const res = await fetch('/pin_nodes.json');
+  if (!res.ok) {
+    throw new Error(`pin_nodes.json HTTP ${res.status}`);
+  }
   const json = await res.json();
 
   const smallPins = json.pins.small || {};
@@ -815,6 +818,7 @@ async function loadNodes() {
       const pinIndex = parseInt(pinKey.replace('PIN_', ''), 10);
       for (const node of list) {
         const pos = node.normalizedPositionUniform || node.normalizedPosition || node.centeredPosition;
+        if (!pos || typeof pos[0] !== 'number' || typeof pos[1] !== 'number') continue;
         const x = pos[0];
         const y = pos[1];
         if (x < minX) minX = x;
@@ -893,7 +897,10 @@ let renderLoopHandle = 0;
  * backgrounded; the chain may not resume. WebSockets also drop. Restart both when
  * the page is foregrounded again.
  */
+let appReady = false;
+
 function resumeRenderingAndBridge() {
+  if (!appReady) return;
   cancelAnimationFrame(renderLoopHandle);
   lastTime = performance.now();
   renderLoopHandle = requestAnimationFrame(renderFrame);
@@ -1831,8 +1838,13 @@ function renderFrame(now) {
   renderLoopHandle = requestAnimationFrame(renderFrame);
 }
 
-loadNodes().then(() => {
-  setupWebSocket();
-  renderLoopHandle = requestAnimationFrame(renderFrame);
-});
+loadNodes()
+  .catch((err) => {
+    console.error('Squid: could not load pin_nodes.json — UI will run but canvas may be empty.', err);
+  })
+  .finally(() => {
+    appReady = true;
+    setupWebSocket();
+    renderLoopHandle = requestAnimationFrame(renderFrame);
+  });
 
