@@ -78,6 +78,8 @@ const controls = {
 };
 
 let nodes = [];
+/** Minimum centre-to-centre distance between any two nodes (model units); used to scale ring radii on small canvases. */
+let cachedMinNodeDistModel = 1;
 let ws = null;
 let bounds = null;
 let effPx = null;
@@ -768,6 +770,24 @@ function setupControls() {
 
 setupControls();
 
+function recomputeMinNodeDistModel(nodeList) {
+  const n = nodeList.length;
+  if (n < 2) {
+    cachedMinNodeDistModel = 1;
+    return;
+  }
+  let m = Infinity;
+  for (let i = 0; i < n; i++) {
+    for (let j = i + 1; j < n; j++) {
+      const dx = nodeList[i].x - nodeList[j].x;
+      const dy = nodeList[i].y - nodeList[j].y;
+      const d = Math.sqrt(dx * dx + dy * dy);
+      if (d > 1e-8 && d < m) m = d;
+    }
+  }
+  cachedMinNodeDistModel = m === Infinity ? 1 : m;
+}
+
 async function loadNodes() {
   const res = await fetch('/pin_nodes.json');
   const json = await res.json();
@@ -812,6 +832,7 @@ async function loadNodes() {
 
   bounds = { minX, maxX, minY, maxY };
   nodes = all;
+  recomputeMinNodeDistModel(all);
 }
 
 function setupWebSocket() {
@@ -895,6 +916,12 @@ function renderFrame(now) {
   const dualViewEnabled = controls.dualView && controls.dualView.checked;
   const wView = dualViewEnabled ? w / 2 : w;
   const scale = Math.min(wView / spanX, h / spanY) * 0.9;
+  const minSepPx = Math.max(4, cachedMinNodeDistModel * scale);
+  const smallBaseRadiusRef = 9;
+  const largeBaseRadiusRef = smallBaseRadiusRef * (60 / 42);
+  const ringRadiusMul = 0.5 + 2 * 0.6;
+  const maxOuterRingPxRef = largeBaseRadiusRef * ringRadiusMul;
+  const nodeRadiusScale = Math.min(1.35, Math.max(0.22, (minSepPx * 0.36) / maxOuterRingPxRef));
 
   if (effPx === null || effPy === null) {
     effPx = w * 0.5;
@@ -1482,9 +1509,7 @@ function renderFrame(now) {
     const cxFrontMirrored = w - cxBack; // front view mirrored in full canvas (0..w)
     const drawXs = dualViewEnabled ? [cxBack, cxFront] : [cxFrontMirrored];
     const isSmall = n.type === 'small';
-    const smallBaseRadius = 9;
-    const largeBaseRadius = smallBaseRadius * (60 / 42);
-    const baseRadius = isSmall ? smallBaseRadius : largeBaseRadius;
+    const baseRadius = (isSmall ? smallBaseRadiusRef : largeBaseRadiusRef) * nodeRadiusScale;
 
     for (const cxDraw of drawXs) {
       if (spiralEnabled) {
@@ -1507,7 +1532,7 @@ function renderFrame(now) {
         let head = headFloat % perNodeLeds;
         if (head < 0) head += perNodeLeds;
         const width = spiralWidthIndices;
-        const dotRadius = Math.max(2.4, baseRadius * 0.24);
+        const dotRadius = Math.max(1.2, baseRadius * 0.24);
 
         for (let k = 2; k >= 0; k--) {
           const ring = rings[k];
