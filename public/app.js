@@ -17,6 +17,8 @@ const controls = {
   spiralDirMixValue: document.getElementById('spiral-dir-mix-value'),
   screenBrightness: document.getElementById('screen-brightness'),
   screenBrightnessValue: document.getElementById('screen-brightness-value'),
+  previewNodeScale: document.getElementById('preview-node-scale'),
+  previewNodeScaleValue: document.getElementById('preview-node-scale-value'),
   noiseScale: document.getElementById('noise-scale'),
   noiseScaleValue: document.getElementById('noise-scale-value'),
   noiseType: document.getElementById('noise-type'),
@@ -529,6 +531,7 @@ function setupControls() {
   [
     controls.maxBrightness,
     controls.screenBrightness,
+    controls.previewNodeScale,
     controls.spiralMode,
     controls.spiralWidth,
     controls.spiralSpeed,
@@ -583,6 +586,10 @@ function setupControls() {
   controls.screenBrightness.addEventListener('input', () => {
     controls.screenBrightnessValue.textContent = (controls.screenBrightness.value / 100).toFixed(2);
     persistControl(controls.screenBrightness);
+  });
+  controls.previewNodeScale.addEventListener('input', () => {
+    controls.previewNodeScaleValue.textContent = `${controls.previewNodeScale.value}%`;
+    persistControl(controls.previewNodeScale);
   });
   controls.noiseScale.addEventListener('input', () => {
     controls.noiseScaleValue.textContent = (controls.noiseScale.value / 100).toFixed(2);
@@ -745,6 +752,7 @@ function setupControls() {
   controls.spiralSpeed.dispatchEvent(new Event('input'));
   controls.spiralDirMix.dispatchEvent(new Event('input'));
   controls.screenBrightness.dispatchEvent(new Event('input'));
+  controls.previewNodeScale.dispatchEvent(new Event('input'));
   controls.noiseScale.dispatchEvent(new Event('input'));
   controls.noiseSpeed.dispatchEvent(new Event('input'));
   controls.blackLevel.dispatchEvent(new Event('input'));
@@ -921,7 +929,11 @@ function renderFrame(now) {
   const largeBaseRadiusRef = smallBaseRadiusRef * (60 / 42);
   const ringRadiusMul = 0.5 + 2 * 0.6;
   const maxOuterRingPxRef = largeBaseRadiusRef * ringRadiusMul;
-  const nodeRadiusScale = Math.min(1.35, Math.max(0.22, (minSepPx * 0.36) / maxOuterRingPxRef));
+  const autoNodeRadiusScale = Math.min(1.35, Math.max(0.22, (minSepPx * 0.36) / maxOuterRingPxRef));
+  const previewNodeScalePct = controls.previewNodeScale
+    ? Math.max(50, Math.min(300, parseInt(controls.previewNodeScale.value, 10) || 100))
+    : 100;
+  const nodeRadiusScale = autoNodeRadiusScale * (previewNodeScalePct / 100);
 
   if (effPx === null || effPy === null) {
     effPx = w * 0.5;
