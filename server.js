@@ -1,11 +1,14 @@
 const path = require('path');
 const fs = require('fs');
+const os = require('os');
 const express = require('express');
 const WebSocket = require('ws');
 const dgram = require('dgram');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
+/** Listen on all interfaces so phones and other PCs on the LAN can connect. */
+const HOST = process.env.HOST || '0.0.0.0';
 const TEENSY_IP = process.env.TEENSY_IP || '192.168.0.50';
 const TEENSY_PORT = parseInt(process.env.TEENSY_PORT || '6000', 10);
 
@@ -19,8 +22,26 @@ app.get('/pin_nodes.json', (req, res) => {
   fs.createReadStream(jsonPath).pipe(res);
 });
 
-const server = app.listen(PORT, () => {
-  console.log(`Web server running on http://localhost:${PORT}`);
+function listLanIPv4() {
+  const out = [];
+  const ifs = os.networkInterfaces();
+  for (const name of Object.keys(ifs)) {
+    for (const net of ifs[name] || []) {
+      const v4 = net.family === 'IPv4' || net.family === 4;
+      if (v4 && !net.internal) out.push(net.address);
+    }
+  }
+  return out;
+}
+
+const server = app.listen(PORT, HOST, () => {
+  console.log(`Web server listening on http://${HOST}:${PORT}`);
+  console.log(`Open from this Pi: http://localhost:${PORT}`);
+  const addrs = listLanIPv4();
+  if (addrs.length) {
+    console.log('Open from phone / other device on same network:');
+    for (const a of addrs) console.log(`  http://${a}:${PORT}`);
+  }
 });
 
 // WebSocket server for frame data
@@ -76,18 +97,42 @@ wss.on('connection', (ws) => {
       return;
     }
     lastSerialSendMs = nowMs;
-    const frameId = frameCounter++ & 0xffff;
-    // UI slider 0–60; send that value directly so Teensy cap is 0–60 (0 = all off)
+    // UI slider 0–60; send that value directly (0–60) in lower 7 bits.
     const raw = parseInt(msg.globalBrightness, 10);
     const globalBrightness = Number.isNaN(raw) ? 60 : Math.max(0, Math.min(60, raw));
+    const spiralMode = !!msg.spiralMode;
+    const spiralWidthRaw = parseInt(msg.spiralWidth, 10);
+    const spiralWidth = Number.isNaN(spiralWidthRaw)
+      ? 0
+      : Math.max(0, Math.min(15, spiralWidthRaw));
+    const spiralSpeedRaw = parseInt(msg.spiralSpeed, 10);
+    const spiralSpeedVal = Number.isNaN(spiralSpeedRaw)
+      ? 80
+      : Math.max(10, Math.min(200, spiralSpeedRaw));
+    const spiralDirMixRaw = parseInt(msg.spiralDirMix, 10);
+    const spiralDirMixVal = Number.isNaN(spiralDirMixRaw)
+      ? 50
+      : Math.max(0, Math.min(100, spiralDirMixRaw));
+
+    // Pack spiral speed (0–15) and direction mix (0–15) into one byte:
+    // lower 4 bits = speed index, upper 4 bits = direction mix index.
+    const speedIndex = Math.max(0, Math.min(15, Math.round(((spiralSpeedVal - 10) / (200 - 10)) * 15)));
+    const dirIndex = Math.max(0, Math.min(15, Math.round((spiralDirMixVal / 100) * 15)));
+    const spiralSpeedPacked = ((dirIndex & 0x0f) << 4) | (speedIndex & 0x0f);
 
     const BYTES_PER_NODE = 2 + 3 * 3;
     const buf = Buffer.alloc(5 + nodeCount * BYTES_PER_NODE);
     let offset = 0;
     buf.writeUInt8('S'.charCodeAt(0), offset++);
-    buf.writeUInt8(globalBrightness, offset++);
-    buf.writeUInt8(frameId & 0xff, offset++);
-    buf.writeUInt8((frameId >> 8) & 0xff, offset++);
+    // Byte 1: brightness flags (bit 7 = spiral mode, bits 0–6 = brightness 0–60)
+    let brightnessFlags = globalBrightness & 0x7f;
+    if (spiralMode) brightnessFlags |= 0x80;
+    buf.writeUInt8(brightnessFlags, offset++);
+    // Byte 2: spiral width (0–15; 0 = use default on Teensy)
+    buf.writeUInt8(spiralWidth & 0x0f, offset++);
+    // Byte 3: spiral speed + direction mix (packed: upper 4 bits dir, lower 4 bits speed)
+    buf.writeUInt8(spiralSpeedPacked & 0xff, offset++);
+    // Byte 4: node count
     buf.writeUInt8(nodeCount, offset++);
 
     for (let i = 0; i < nodeCount; i++) {

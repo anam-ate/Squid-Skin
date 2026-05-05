@@ -8,6 +8,15 @@ const noiseVizCtx = noiseViz ? noiseViz.getContext('2d') : null;
 const controls = {
   maxBrightness: document.getElementById('max-brightness'),
   maxBrightnessValue: document.getElementById('max-brightness-value'),
+  spiralMode: document.getElementById('spiral-mode'),
+  spiralWidth: document.getElementById('spiral-width'),
+  spiralWidthValue: document.getElementById('spiral-width-value'),
+  spiralSpeed: document.getElementById('spiral-speed'),
+  spiralSpeedValue: document.getElementById('spiral-speed-value'),
+  spiralDirMix: document.getElementById('spiral-dir-mix'),
+  spiralDirMixValue: document.getElementById('spiral-dir-mix-value'),
+  screenBrightness: document.getElementById('screen-brightness'),
+  screenBrightnessValue: document.getElementById('screen-brightness-value'),
   noiseScale: document.getElementById('noise-scale'),
   noiseScaleValue: document.getElementById('noise-scale-value'),
   noiseType: document.getElementById('noise-type'),
@@ -504,9 +513,24 @@ function hexToRgb(hex) {
 }
 
 function setupControls() {
+  try {
+    const newKey = STORAGE_PREFIX + 'screen-brightness';
+    const oldKey = STORAGE_PREFIX + 'preview-brightness';
+    if (localStorage.getItem(newKey) == null && localStorage.getItem(oldKey) != null) {
+      localStorage.setItem(newKey, localStorage.getItem(oldKey));
+    }
+  } catch (_) {
+    // ignore
+  }
+
   // Restore persisted values first
   [
     controls.maxBrightness,
+    controls.screenBrightness,
+    controls.spiralMode,
+    controls.spiralWidth,
+    controls.spiralSpeed,
+    controls.spiralDirMix,
     controls.noiseScale,
     controls.noiseSpeed,
     controls.blackLevel,
@@ -538,6 +562,25 @@ function setupControls() {
   controls.maxBrightness.addEventListener('input', () => {
     controls.maxBrightnessValue.textContent = controls.maxBrightness.value;
     persistControl(controls.maxBrightness);
+  });
+  controls.spiralMode.addEventListener('change', () => {
+    persistControl(controls.spiralMode);
+  });
+  controls.spiralWidth.addEventListener('input', () => {
+    controls.spiralWidthValue.textContent = controls.spiralWidth.value;
+    persistControl(controls.spiralWidth);
+  });
+  controls.spiralSpeed.addEventListener('input', () => {
+    controls.spiralSpeedValue.textContent = (controls.spiralSpeed.value / 100).toFixed(2);
+    persistControl(controls.spiralSpeed);
+  });
+  controls.spiralDirMix.addEventListener('input', () => {
+    controls.spiralDirMixValue.textContent = (controls.spiralDirMix.value / 100).toFixed(2);
+    persistControl(controls.spiralDirMix);
+  });
+  controls.screenBrightness.addEventListener('input', () => {
+    controls.screenBrightnessValue.textContent = (controls.screenBrightness.value / 100).toFixed(2);
+    persistControl(controls.screenBrightness);
   });
   controls.noiseScale.addEventListener('input', () => {
     controls.noiseScaleValue.textContent = (controls.noiseScale.value / 100).toFixed(2);
@@ -696,6 +739,10 @@ function setupControls() {
 
   // Initialize labels
   controls.maxBrightness.dispatchEvent(new Event('input'));
+  controls.spiralWidth.dispatchEvent(new Event('input'));
+  controls.spiralSpeed.dispatchEvent(new Event('input'));
+  controls.spiralDirMix.dispatchEvent(new Event('input'));
+  controls.screenBrightness.dispatchEvent(new Event('input'));
   controls.noiseScale.dispatchEvent(new Event('input'));
   controls.noiseSpeed.dispatchEvent(new Event('input'));
   controls.blackLevel.dispatchEvent(new Event('input'));
@@ -754,6 +801,7 @@ async function loadNodes() {
           y,
           ringSizes: node.ringSizes,
           phaseSeed: Math.random() * Math.PI * 2,
+          spiralDir: Math.random() < 0.5 ? 1 : -1,
         });
       }
     }
@@ -858,8 +906,19 @@ function renderFrame(now) {
   const outerBaseColor = hexToRgb(controls.outerColor.value);
   const baseColors = [innerBaseColor, middleBaseColor, outerBaseColor];
   const colorVariation = controls.colorVariation.value / 100;
+  const spiralEnabled = !!(controls.spiralMode && controls.spiralMode.checked);
+  const spiralWidthIndices = Math.max(1, Math.min(10, parseInt(controls.spiralWidth?.value ?? '4', 10) || 4));
+  const spiralSpeedNorm = controls.spiralSpeed
+    ? Math.max(0.1, Math.min(2.0, (controls.spiralSpeed.value / 100)))
+    : 0.8;
+  const spiralDirMix = controls.spiralDirMix
+    ? Math.max(0, Math.min(1, (controls.spiralDirMix.value / 100)))
+    : 0.5;
+  const screenBrightnessMul = controls.screenBrightness
+    ? Math.max(0.25, Math.min(5.0, (controls.screenBrightness.value / 100)))
+    : 1.0;
 
-  const frameNodes = [];
+    const frameNodes = [];
   const strandDebug = new Map(); // pin -> [{ cx, cy, index }] for overlay
   const minDim = Math.min(wView, h);
   const effRadiusPx = effRadius * 0.5 * minDim;
@@ -1125,6 +1184,12 @@ function renderFrame(now) {
   const audioDrive = controls.audioEnable.checked ? audioEnv : 0; // global envelope for feel
   const audioBlend = controls.audioBlend.value / 100; // 0..1 (fade out noise, more audio)
 
+  // Approximate per-node LED counts for preview (matches Teensy-side layout):
+  // small node = 30 LEDs: inner 5, middle 10, outer 15
+  // large node = 44 LEDs: inner 8, middle 14, outer 22
+  const RING_LED_COUNTS_SMALL = [5, 10, 15];   // [inner, middle, outer]
+  const RING_LED_COUNTS_LARGE = [8, 14, 22];   // [inner, middle, outer]
+
   for (const n of nodes) {
     const nx = (n.x - minX) / spanX;
     const ny = (n.y - minY) / spanY;
@@ -1214,7 +1279,7 @@ function renderFrame(now) {
       const middle = middleBaseColor;
       const outer = outerBaseColor;
       const checked = controls[`strandTest${n.pin}`]?.checked;
-      const scalePreview = globalBrightness / 60;
+      const scalePreview = (globalBrightness / 60) * screenBrightnessMul;
       const base = [inner, middle, outer];
       for (let k = 0; k < 3; k++) {
         const c = base[k];
@@ -1223,16 +1288,16 @@ function renderFrame(now) {
         const b = checked ? Math.min(255, Math.round(c.b)) : 0;
         rings.push({
           r, g, b,
-          pr: Math.round(r * scalePreview),
-          pg: Math.round(g * scalePreview),
-          pb: Math.round(b * scalePreview),
+          pr: Math.round(Math.min(255, r * scalePreview)),
+          pg: Math.round(Math.min(255, g * scalePreview)),
+          pb: Math.round(Math.min(255, b * scalePreview)),
         });
       }
     } else if (controls.testMode && controls.testMode.checked) {
       const inner = innerBaseColor;
       const middle = middleBaseColor;
       const outer = outerBaseColor;
-      const scalePreview = globalBrightness / 60;
+      const scalePreview = (globalBrightness / 60) * screenBrightnessMul;
       for (let k = 0; k < 3; k++) {
         const base = [inner, middle, outer][k];
         const sr = Math.min(255, Math.round(base.r));
@@ -1240,20 +1305,48 @@ function renderFrame(now) {
         const sb = Math.min(255, Math.round(base.b));
         rings.push({
           r: sr, g: sg, b: sb,
-          pr: Math.round(sr * scalePreview),
-          pg: Math.round(sg * scalePreview),
-          pb: Math.round(sb * scalePreview),
+          pr: Math.round(Math.min(255, sr * scalePreview)),
+          pg: Math.round(Math.min(255, sg * scalePreview)),
+          pb: Math.round(Math.min(255, sb * scalePreview)),
         });
       }
     } else {
-    // Base chromatophore pulse per ring (inner leads outer)
-    // Use per-node randomness (derived from phaseSeed) to decide whether this
-    // node uses the normal or flipped colour order, based on the slider.
+    // Base chromatophore pulse per ring (inner leads outer) or spiral node mode.
+    // Use per-node randomness (derived from phaseSeed) for palette choice and spiral phase.
     const nodeRand = (n.phaseSeed / (Math.PI * 2)) % 1;
-    const useFlippedPalette = nodeRand < colorVariation;
-    const nodePalette = useFlippedPalette
-      ? [outerBaseColor, middleBaseColor, innerBaseColor]  // flipped: inner<-outer, outer<-inner
-      : baseColors;
+    let nodePalette;
+    if (spiralEnabled) {
+      // In spiral mode, treat the node as a whole: pick a single colour
+      // from the three ring colours and apply it to all rings.
+      const poolIndex = Math.floor(nodeRand * 3) % 3;
+      const chosen = baseColors[poolIndex];
+      nodePalette = [chosen, chosen, chosen];
+    } else {
+      const useFlippedPalette = nodeRand < colorVariation;
+      nodePalette = useFlippedPalette
+        ? [outerBaseColor, middleBaseColor, innerBaseColor]  // flipped: inner<-outer, outer<-inner
+        : baseColors;
+    }
+
+    // Precompute per-node spiral parameters when enabled
+    let totalNodeLeds = 0;
+    let ringOffsets = [0, 0, 0];
+    if (spiralEnabled) {
+      const fallbackSmall = [5, 10, 15];
+      const fallbackLarge = [8, 14, 22];
+      const rs = (n.ringSizes && n.ringSizes.length === 3)
+        ? n.ringSizes
+        : (n.type === 'small' ? fallbackSmall : fallbackLarge);
+      const r0 = rs[0] || 0;
+      const r1 = rs[1] || 0;
+      const r2 = rs[2] || 0;
+      ringOffsets = [0, r0, r0 + r1];
+      totalNodeLeds = r0 + r1 + r2;
+      if (totalNodeLeds <= 0) {
+        totalNodeLeds = (n.type === 'small') ? 30 : 44;
+      }
+    }
+
     for (let k = 0; k < 3; k++) {
       const phaseOffset = k * 0.8;
 
@@ -1360,15 +1453,17 @@ function renderFrame(now) {
       const brightnessSmooth = smoothArr[k];
 
       const base = nodePalette[k];
-      // Send colours 0–255 exactly (no global brightness here; it goes in packet header).
+      // Colours for hardware: 0–255 exactly (no global brightness here; it goes in packet header).
       const r = Math.min(255, Math.round(base.r * brightnessSmooth));
       const g = Math.min(255, Math.round(base.g * brightnessSmooth));
       const b = Math.min(255, Math.round(base.b * brightnessSmooth));
+      // Preview colours: match LED global cap, then apply screen-only boost (not sent to Teensy).
+      const previewScale = (globalBrightness / 60) * screenBrightnessMul;
       rings.push({
         r, g, b,
-        pr: Math.round(base.r * brightnessSmooth * (globalBrightness / 60)),
-        pg: Math.round(base.g * brightnessSmooth * (globalBrightness / 60)),
-        pb: Math.round(base.b * brightnessSmooth * (globalBrightness / 60)),
+        pr: Math.round(Math.min(255, base.r * brightnessSmooth * previewScale)),
+        pg: Math.round(Math.min(255, base.g * brightnessSmooth * previewScale)),
+        pb: Math.round(Math.min(255, base.b * brightnessSmooth * previewScale)),
       });
 
       // Inject bursts for neighbours only from the innermost ring (k === 0)
@@ -1392,16 +1487,74 @@ function renderFrame(now) {
     const baseRadius = isSmall ? smallBaseRadius : largeBaseRadius;
 
     for (const cxDraw of drawXs) {
-      for (let k = 2; k >= 0; k--) {
-        const ring = rings[k];
-        const radius = baseRadius * (0.5 + k * 0.6);
+      if (spiralEnabled) {
+        // In spiral node mode, visualise individual LED indices as small dots
+        // with a sequential spiral trail that matches the Teensy behaviour.
+        const ringCounts = isSmall ? RING_LED_COUNTS_SMALL : RING_LED_COUNTS_LARGE;
+        const perNodeLeds = isSmall ? 30 : 44;
+        const ringOffsets = isSmall ? [0, 5, 15] : [0, 8, 22];
+        // Deterministic per-node direction using a simple hash of strand+node index,
+        // mixed with the spiralDirMix slider so you can choose how much of the
+        // canvas runs reverse vs forward spirals.
+        const strand = n.pin | 0;
+        const nodeIdx = n.index | 0;
+        let h = (((strand * 1103515245) >>> 0) + ((nodeIdx * 12345) >>> 0) + 1) >>> 0;
+        h = (h >>> 8) & 0xffff;
+        const rndDir = h / 65535;
+        const dir = rndDir < spiralDirMix ? -1 : 1;
+        const nodeRand = rndDir;
+        const headFloat = (timeAccum * perNodeLeds * 0.6 * spiralSpeedNorm * dir) + nodeRand * perNodeLeds;
+        let head = headFloat % perNodeLeds;
+        if (head < 0) head += perNodeLeds;
+        const width = spiralWidthIndices;
+        const dotRadius = Math.max(2.4, baseRadius * 0.24);
 
-        ctx.beginPath();
-        ctx.arc(cxDraw, cyScreen, radius, 0, Math.PI * 2);
-        ctx.closePath();
+        for (let k = 2; k >= 0; k--) {
+          const ring = rings[k];
+          const radius = baseRadius * (0.5 + k * 0.6);
+          const ledCount = ringCounts[k] || 0;
+          if (ledCount <= 0) continue;
+          const ringBase = ringOffsets[k] || 0;
 
-        ctx.fillStyle = `rgba(${ring.pr}, ${ring.pg}, ${ring.pb}, 0.9)`;
-        ctx.fill();
+          for (let i = 0; i < ledCount; i++) {
+            const localIndex = ringBase + i;
+            let delta = localIndex - head;
+            if (dir < 0) delta = -delta;
+            if (delta < 0) continue;
+            let d = delta;
+            if (d >= perNodeLeds) d = d % perNodeLeds;
+            if (d >= width) continue;
+
+            const u = width <= 1 ? 0 : d / (width - 1);
+            const falloff = 1 - u; // 1 at head, 0 at tail
+            const pr = ring.pr * falloff;
+            const pg = ring.pg * falloff;
+            const pb = ring.pb * falloff;
+            if (pr <= 0 && pg <= 0 && pb <= 0) continue;
+
+            const angle = (i / ledCount) * Math.PI * 2 + n.phaseSeed;
+            const px = cxDraw + Math.cos(angle) * radius;
+            const py = cyScreen + Math.sin(angle) * radius;
+            ctx.beginPath();
+            ctx.arc(px, py, dotRadius, 0, Math.PI * 2);
+            ctx.closePath();
+            ctx.fillStyle = `rgba(${pr.toFixed(1)}, ${pg.toFixed(1)}, ${pb.toFixed(1)}, 0.98)`;
+            ctx.fill();
+          }
+        }
+      } else {
+        // Original ring-based preview
+        for (let k = 2; k >= 0; k--) {
+          const ring = rings[k];
+          const radius = baseRadius * (0.5 + k * 0.6);
+
+          ctx.beginPath();
+          ctx.arc(cxDraw, cyScreen, radius, 0, Math.PI * 2);
+          ctx.closePath();
+
+          ctx.fillStyle = `rgba(${ring.pr}, ${ring.pg}, ${ring.pb}, 0.9)`;
+          ctx.fill();
+        }
       }
     }
 
@@ -1539,9 +1692,22 @@ function renderFrame(now) {
     const nodesToSend = globalBrightness === 0
       ? frameNodes.map((n) => ({ ...n, rings: [{ r: 0, g: 0, b: 0 }, { r: 0, g: 0, b: 0 }, { r: 0, g: 0, b: 0 }] }))
       : frameNodes;
+    const spiralSpeedVal = controls.spiralSpeed
+      ? Math.max(10, Math.min(200, parseInt(controls.spiralSpeed.value, 10) || 80))
+      : 80;
+    const spiralDirMixVal = controls.spiralDirMix
+      ? Math.max(0, Math.min(100, parseInt(controls.spiralDirMix.value, 10) || 50))
+      : 50;
+    const speedIndex = Math.max(0, Math.min(15, Math.round(((spiralSpeedVal - 10) / (200 - 10)) * 15)));
+    const dirIndex = Math.max(0, Math.min(15, Math.round((spiralDirMixVal / 100) * 15)));
+    const spiralSpeedByte = ((dirIndex & 0x0f) << 4) | (speedIndex & 0x0f);
     ws.send(JSON.stringify({
       frameId: frameId++,
       globalBrightness,
+      spiralMode: spiralEnabled,
+      spiralWidth: spiralWidthIndices,
+      spiralSpeed: spiralSpeedVal,
+      spiralDirMix: spiralDirMixVal,
       nodes: nodesToSend,
     }));
   }
