@@ -843,19 +843,53 @@ async function loadNodes() {
   recomputeMinNodeDistModel(all);
 }
 
+/** Bumped on each new connection attempt so stale sockets do not double-reconnect. */
+let wsSession = 0;
+
 function setupWebSocket() {
   const proto = window.location.protocol === 'https:' ? 'wss' : 'ws';
   const url = `${proto}://${window.location.host}/frames`;
-  ws = new WebSocket(url);
+  const session = ++wsSession;
 
-  ws.onopen = () => {
+  const prev = ws;
+  ws = null;
+  if (prev) {
+    prev.onopen = null;
+    prev.onclose = null;
+    prev.onerror = null;
+    try {
+      if (prev.readyState === WebSocket.OPEN || prev.readyState === WebSocket.CONNECTING) {
+        prev.close();
+      }
+    } catch (_) {
+      // ignore
+    }
+  }
+
+  const socket = new WebSocket(url);
+  ws = socket;
+
+  socket.onopen = () => {
+    if (session !== wsSession) return;
     console.log('WebSocket connected');
   };
-  ws.onclose = () => {
+  socket.onclose = () => {
+    if (session !== wsSession) return;
     console.log('WebSocket disconnected');
-    setTimeout(setupWebSocket, 2000);
+    setTimeout(() => {
+      if (session === wsSession) setupWebSocket();
+    }, 1200);
+  };
+  socket.onerror = () => {
+    // Reconnect via onclose
   };
 }
+
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState !== 'visible') return;
+  if (ws && (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING)) return;
+  setupWebSocket();
+});
 
 let lastTime = performance.now();
 let timeAccum = 0;
