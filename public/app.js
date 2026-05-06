@@ -77,6 +77,20 @@ const controls = {
   strandTest6: document.getElementById('strand-test-6'),
   strandTest7: document.getElementById('strand-test-7'),
   strandTest8: document.getElementById('strand-test-8'),
+
+  presetEnable: document.getElementById('preset-enable'),
+  presetNext: document.getElementById('preset-next'),
+  presetActiveLabel: document.getElementById('preset-active-label'),
+  presetInclude0: document.getElementById('preset-include-0'),
+  presetInclude1: document.getElementById('preset-include-1'),
+  presetInclude2: document.getElementById('preset-include-2'),
+  presetInclude3: document.getElementById('preset-include-3'),
+  presetInclude4: document.getElementById('preset-include-4'),
+  presetApply0: document.getElementById('preset-apply-0'),
+  presetApply1: document.getElementById('preset-apply-1'),
+  presetApply2: document.getElementById('preset-apply-2'),
+  presetApply3: document.getElementById('preset-apply-3'),
+  presetApply4: document.getElementById('preset-apply-4'),
 };
 
 let nodes = [];
@@ -124,6 +138,70 @@ const spectrumSelection = {
 };
 
 const STORAGE_PREFIX = 'squid-ui-';
+
+const COLOR_PRESETS = [
+  { name: 'Indigo / Green / Amber', inner: '#4f46e5', middle: '#22c55e', outer: '#eab308' },
+  { name: 'Cyan / Magenta / Violet', inner: '#22d3ee', middle: '#ec4899', outer: '#8b5cf6' },
+  { name: 'Blue / Teal / Warm white', inner: '#3b82f6', middle: '#14b8a6', outer: '#f59e0b' },
+  { name: 'Red / Orange / Gold', inner: '#ef4444', middle: '#f97316', outer: '#facc15' },
+  { name: 'Deep blue / Lime / Pink', inner: '#1d4ed8', middle: '#84cc16', outer: '#f472b6' },
+];
+
+const STORAGE_ACTIVE_PRESET = STORAGE_PREFIX + 'active-preset-index';
+
+function setActivePresetLabel(idx) {
+  if (!controls.presetActiveLabel) return;
+  if (idx == null || idx < 0 || idx >= COLOR_PRESETS.length) {
+    controls.presetActiveLabel.textContent = 'Preset: none';
+    return;
+  }
+  controls.presetActiveLabel.textContent = `Preset: ${COLOR_PRESETS[idx].name}`;
+}
+
+function applyPreset(idx) {
+  if (idx == null || idx < 0 || idx >= COLOR_PRESETS.length) return;
+  const p = COLOR_PRESETS[idx];
+  if (controls.innerColor) controls.innerColor.value = p.inner;
+  if (controls.middleColor) controls.middleColor.value = p.middle;
+  if (controls.outerColor) controls.outerColor.value = p.outer;
+  // Persist chosen colours immediately so reload keeps them.
+  persistControl(controls.innerColor);
+  persistControl(controls.middleColor);
+  persistControl(controls.outerColor);
+  try {
+    localStorage.setItem(STORAGE_ACTIVE_PRESET, String(idx));
+  } catch (_) {}
+  setActivePresetLabel(idx);
+}
+
+function includedPresetIndices() {
+  const includes = [
+    controls.presetInclude0,
+    controls.presetInclude1,
+    controls.presetInclude2,
+    controls.presetInclude3,
+    controls.presetInclude4,
+  ];
+  const out = [];
+  for (let i = 0; i < includes.length; i++) {
+    const el = includes[i];
+    if (el && el.checked) out.push(i);
+  }
+  return out;
+}
+
+function cyclePreset() {
+  const list = includedPresetIndices();
+  const usable = list.length ? list : [0, 1, 2, 3, 4];
+  let cur = -1;
+  try {
+    const raw = localStorage.getItem(STORAGE_ACTIVE_PRESET);
+    if (raw != null) cur = parseInt(raw, 10);
+  } catch (_) {}
+  const pos = usable.indexOf(cur);
+  const next = usable[(pos + 1) % usable.length];
+  applyPreset(next);
+}
 
 function shuffleInPlace(arr) {
   for (let i = arr.length - 1; i > 0; i--) {
@@ -562,7 +640,18 @@ function setupControls() {
     controls.noiseType,
     controls.noiseType2,
     controls.noiseBlend,
+    controls.presetEnable,
+    controls.presetInclude0,
+    controls.presetInclude1,
+    controls.presetInclude2,
+    controls.presetInclude3,
+    controls.presetInclude4,
   ].forEach(restoreControl);
+
+  // Persist colour pickers on change (so presets + manual tweaks survive reloads)
+  controls.innerColor?.addEventListener('input', () => persistControl(controls.innerColor));
+  controls.middleColor?.addEventListener('input', () => persistControl(controls.middleColor));
+  controls.outerColor?.addEventListener('input', () => persistControl(controls.outerColor));
 
   controls.maxBrightness.addEventListener('input', () => {
     controls.maxBrightnessValue.textContent = controls.maxBrightness.value;
@@ -746,6 +835,38 @@ function setupControls() {
     persistControl(controls.colorVariation);
   });
 
+  // Presets: enable/disable + include toggles + apply buttons + cycling
+  const presetIncludeEls = [
+    controls.presetInclude0,
+    controls.presetInclude1,
+    controls.presetInclude2,
+    controls.presetInclude3,
+    controls.presetInclude4,
+  ];
+  presetIncludeEls.forEach((el) => {
+    el?.addEventListener('change', () => persistControl(el));
+  });
+  controls.presetEnable?.addEventListener('change', () => {
+    persistControl(controls.presetEnable);
+  });
+  controls.presetNext?.addEventListener('click', () => {
+    if (controls.presetEnable && !controls.presetEnable.checked) return;
+    cyclePreset();
+  });
+  const presetApplyEls = [
+    controls.presetApply0,
+    controls.presetApply1,
+    controls.presetApply2,
+    controls.presetApply3,
+    controls.presetApply4,
+  ];
+  presetApplyEls.forEach((btn, idx) => {
+    btn?.addEventListener('click', () => {
+      if (controls.presetEnable && !controls.presetEnable.checked) return;
+      applyPreset(idx);
+    });
+  });
+
   // Initialize labels
   controls.maxBrightness.dispatchEvent(new Event('input'));
   controls.spiralWidth.dispatchEvent(new Event('input'));
@@ -774,6 +895,26 @@ function setupControls() {
   controls.audioRegionCount.dispatchEvent(new Event('input'));
   controls.audioDebug.dispatchEvent(new Event('change'));
   controls.colorVariation.dispatchEvent(new Event('input'));
+
+  // Presets: default include all if none stored yet.
+  if (controls.presetInclude0 && controls.presetInclude1 && controls.presetInclude2 && controls.presetInclude3 && controls.presetInclude4) {
+    const anyIncluded = presetIncludeEls.some((el) => el && el.checked);
+    if (!anyIncluded) {
+      presetIncludeEls.forEach((el) => {
+        if (!el) return;
+        el.checked = true;
+        persistControl(el);
+      });
+    }
+  }
+
+  // Restore active preset label from storage (do not auto-apply to avoid overriding stored picker values).
+  let activeIdx = -1;
+  try {
+    const raw = localStorage.getItem(STORAGE_ACTIVE_PRESET);
+    if (raw != null) activeIdx = parseInt(raw, 10);
+  } catch (_) {}
+  setActivePresetLabel(Number.isFinite(activeIdx) ? activeIdx : -1);
 }
 
 setupControls();

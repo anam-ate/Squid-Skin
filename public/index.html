@@ -108,6 +108,42 @@
             Outer ring colour
             <input type="color" id="outer-color" value="#eab308" />
           </label>
+          <div class="preset-block">
+            <div class="preset-header">
+              <h3>Presets</h3>
+              <label class="inline preset-enable">
+                <input type="checkbox" id="preset-enable" />
+                Enable presets
+              </label>
+            </div>
+            <p class="control-hint">Pick a preset to overwrite the three colour pickers. Use “Next preset” to cycle through presets that are enabled below.</p>
+            <div class="preset-actions">
+              <button id="preset-next" type="button">Next preset</button>
+              <span id="preset-active-label" class="preset-active-label">Preset: none</span>
+            </div>
+            <div class="preset-list" role="group" aria-label="Colour presets">
+              <label class="preset-row">
+                <input type="checkbox" id="preset-include-0" />
+                <button id="preset-apply-0" type="button" class="preset-apply">Indigo / Green / Amber</button>
+              </label>
+              <label class="preset-row">
+                <input type="checkbox" id="preset-include-1" />
+                <button id="preset-apply-1" type="button" class="preset-apply">Cyan / Magenta / Violet</button>
+              </label>
+              <label class="preset-row">
+                <input type="checkbox" id="preset-include-2" />
+                <button id="preset-apply-2" type="button" class="preset-apply">Blue / Teal / Warm white</button>
+              </label>
+              <label class="preset-row">
+                <input type="checkbox" id="preset-include-3" />
+                <button id="preset-apply-3" type="button" class="preset-apply">Red / Orange / Gold</button>
+              </label>
+              <label class="preset-row">
+                <input type="checkbox" id="preset-include-4" />
+                <button id="preset-apply-4" type="button" class="preset-apply">Deep blue / Lime / Pink</button>
+              </label>
+            </div>
+          </div>
           <label>
             Colour variation (flip some nodes)
             <input type="range" id="color-variation" min="0" max="100" value="0" />
