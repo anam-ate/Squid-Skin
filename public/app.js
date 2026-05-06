@@ -156,11 +156,11 @@ const spectrumSelection = {
 const STORAGE_PREFIX = 'squid-ui-';
 
 const DEFAULT_COLOR_PRESETS = [
-  { name: 'Indigo / Green / Amber', inner: '#4f46e5', middle: '#22c55e', outer: '#eab308' },
-  { name: 'Cyan / Magenta / Violet', inner: '#22d3ee', middle: '#ec4899', outer: '#8b5cf6' },
-  { name: 'Blue / Teal / Warm white', inner: '#3b82f6', middle: '#14b8a6', outer: '#f59e0b' },
-  { name: 'Red / Orange / Gold', inner: '#ef4444', middle: '#f97316', outer: '#facc15' },
-  { name: 'Deep blue / Lime / Pink', inner: '#1d4ed8', middle: '#84cc16', outer: '#f472b6' },
+  { name: 'Preset 1', inner: '#4f46e5', middle: '#22c55e', outer: '#eab308' },
+  { name: 'Preset 2', inner: '#22d3ee', middle: '#ec4899', outer: '#8b5cf6' },
+  { name: 'Preset 3', inner: '#3b82f6', middle: '#14b8a6', outer: '#f59e0b' },
+  { name: 'Preset 4', inner: '#ef4444', middle: '#f97316', outer: '#facc15' },
+  { name: 'Preset 5', inner: '#1d4ed8', middle: '#84cc16', outer: '#f472b6' },
 ];
 
 const STORAGE_ACTIVE_PRESET = STORAGE_PREFIX + 'active-preset-index';
@@ -202,6 +202,24 @@ function saveColorPresets(presets) {
 
 let colorPresets = loadColorPresets();
 
+function getActivePresetIndex() {
+  let idx = -1;
+  try {
+    const raw = localStorage.getItem(STORAGE_ACTIVE_PRESET);
+    if (raw != null) idx = parseInt(raw, 10);
+  } catch (_) {}
+  if (!Number.isFinite(idx)) return -1;
+  if (idx < 0 || idx >= colorPresets.length) return -1;
+  return idx;
+}
+
+function setActivePresetIndex(idx) {
+  try {
+    localStorage.setItem(STORAGE_ACTIVE_PRESET, String(idx));
+  } catch (_) {}
+  setActivePresetLabel(idx);
+}
+
 function setActivePresetLabel(idx) {
   if (!controls.presetActiveLabel) return;
   if (idx == null || idx < 0 || idx >= colorPresets.length) {
@@ -221,10 +239,7 @@ function applyPreset(idx) {
   persistControl(controls.innerColor);
   persistControl(controls.middleColor);
   persistControl(controls.outerColor);
-  try {
-    localStorage.setItem(STORAGE_ACTIVE_PRESET, String(idx));
-  } catch (_) {}
-  setActivePresetLabel(idx);
+  setActivePresetIndex(idx);
 }
 
 function includedPresetIndices() {
@@ -727,14 +742,7 @@ function setupControls() {
       saveColorPresets(colorPresets);
 
       // If this is currently active, update the label and keep the pickers in sync.
-      let activeIdx = -1;
-      try {
-        const raw = localStorage.getItem(STORAGE_ACTIVE_PRESET);
-        if (raw != null) activeIdx = parseInt(raw, 10);
-      } catch (_) {}
-      if (activeIdx === i) {
-        setActivePresetLabel(i);
-      }
+      if (getActivePresetIndex() === i) setActivePresetLabel(i);
     };
 
     t.inner?.addEventListener('input', onChange);
@@ -743,9 +751,37 @@ function setupControls() {
   }
 
   // Persist colour pickers on change (so presets + manual tweaks survive reloads)
-  controls.innerColor?.addEventListener('input', () => persistControl(controls.innerColor));
-  controls.middleColor?.addEventListener('input', () => persistControl(controls.middleColor));
-  controls.outerColor?.addEventListener('input', () => persistControl(controls.outerColor));
+  const onMainColorChange = () => {
+    persistControl(controls.innerColor);
+    persistControl(controls.middleColor);
+    persistControl(controls.outerColor);
+
+    // If a preset is active, write back live edits into that preset.
+    const active = getActivePresetIndex();
+    if (active < 0) return;
+    if (controls.presetEnable && !controls.presetEnable.checked) return;
+
+    const prev = colorPresets[active];
+    const next = {
+      ...prev,
+      inner: normaliseHexColor(controls.innerColor?.value, prev.inner),
+      middle: normaliseHexColor(controls.middleColor?.value, prev.middle),
+      outer: normaliseHexColor(controls.outerColor?.value, prev.outer),
+    };
+    colorPresets[active] = next;
+    saveColorPresets(colorPresets);
+
+    // Reflect in the small per-preset pickers so UI stays consistent.
+    const trip = presetTriples[active];
+    if (trip?.inner) trip.inner.value = next.inner;
+    if (trip?.middle) trip.middle.value = next.middle;
+    if (trip?.outer) trip.outer.value = next.outer;
+    setActivePresetLabel(active);
+  };
+
+  controls.innerColor?.addEventListener('input', onMainColorChange);
+  controls.middleColor?.addEventListener('input', onMainColorChange);
+  controls.outerColor?.addEventListener('input', onMainColorChange);
 
   controls.maxBrightness.addEventListener('input', () => {
     controls.maxBrightnessValue.textContent = controls.maxBrightness.value;
@@ -1003,12 +1039,7 @@ function setupControls() {
   }
 
   // Restore active preset label from storage (do not auto-apply to avoid overriding stored picker values).
-  let activeIdx = -1;
-  try {
-    const raw = localStorage.getItem(STORAGE_ACTIVE_PRESET);
-    if (raw != null) activeIdx = parseInt(raw, 10);
-  } catch (_) {}
-  setActivePresetLabel(Number.isFinite(activeIdx) ? activeIdx : -1);
+  setActivePresetLabel(getActivePresetIndex());
 }
 
 setupControls();
