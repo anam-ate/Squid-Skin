@@ -108,6 +108,29 @@ bool getRingRange(uint8_t strand, uint8_t nodeIndex, uint8_t ringIndex, uint32_t
 // Global brightness from packet header (0–60). We keep strip at 255 and clamp pixel values to this cap.
 static uint8_t globalBrightnessCap = 60;
 
+// Spiral mode: when enabled via packet header, we use the per-node ring colours
+// as a palette and animate a per-LED trail through each node's LEDs instead of
+// lighting whole rings solid.
+static bool spiralModeActive = false;
+static uint8_t spiralWidthIndices = 4; // 1..10 suggested
+
+struct NodeColor {
+  uint8_t r[3];
+  uint8_t g[3];
+  uint8_t b[3];
+  bool present;
+};
+
+// Maximum of 10 nodes per strand (see NODES_PER_STRAND).
+static NodeColor nodeColors[9][10];
+
+// Deterministic hash for per-node randomness (used for direction decisions).
+static inline uint16_t nodeHash(uint8_t strand, uint8_t nodeIndex) {
+  uint32_t v = (uint32_t)strand * 1103515245u + (uint32_t)nodeIndex * 12345u + 1u;
+  v = (v >> 8) & 0xFFFFu;
+  return (uint16_t)v;
+}
+
 static uint8_t testStrand = 0;
 static uint16_t testOffsetInStrand = 0;
 static unsigned long lastTestStepMs = 0;
@@ -138,26 +161,69 @@ void stepSelfTest() {
   for (uint8_t s = 0; s < 9; ++s) strips[s]->show();
 }
 
-// UDP frame: 'S', globalBrightness(1), frameLow(1), frameHigh(1), nodeCount(1), then per node: pin, index, ring0..2 rgb (9 bytes each)
+// UDP frame: header + per-node colours
+//   'S' (1),
+//   brightnessFlags (1): bit7 = spiral mode, bits0-6 = global brightness 0–60,
+//   spiralWidth (1): 0..15 (0 = use default on Teensy),
+//   spiralSpeed+Dir (1): lower 4 bits speed index, upper 4 bits direction mix index,
+//   nodeCount (1),
+// then for each node:
+//   pin (1), index (1), ring0.r, ring0.g, ring0.b, ring1.r, ring1.g, ring1.b, ring2.r, ring2.g, ring2.b
 void applyFrameFromBuffer(const uint8_t *buf, uint16_t len) {
   if (len < 5) return;
   uint16_t offset = 0;
   if (buf[offset++] != 'S') return;
-  uint8_t rawBrightness = buf[offset++];
+  const uint8_t flags = buf[offset++];
+  const uint8_t widthByte = buf[offset++];
+  const uint8_t speedPacked = buf[offset++];
+  const uint8_t nodeCount = buf[offset++];
+
+  // Decode brightness and spiral mode.
+  const uint8_t rawBrightness = (flags & 0x7F);
   globalBrightnessCap = (rawBrightness <= 60) ? rawBrightness : (uint8_t)60;
-  offset += 2; // frame id
-  uint8_t nodeCount = buf[offset++];
+  spiralModeActive = (flags & 0x80) != 0;
+  if (widthByte > 0 && widthByte <= 15) {
+    spiralWidthIndices = widthByte;
+  }
+  // Decode packed speed and direction mix (both 0..15).
+  const uint8_t speedIndex = speedPacked & 0x0f;
+  const uint8_t dirIndex = (speedPacked >> 4) & 0x0f;
+  const float speedNormGlobal = (float)speedIndex / 15.0f;      // 0..1
+  const float dirMixGlobal = (float)dirIndex / 15.0f;           // 0..1
 
   const uint16_t bytesPerNode = 2 + 3 * 3;
   if (len < 5 + (uint16_t)nodeCount * bytesPerNode) return;
 
-  // Strip brightness stays at 255; we clamp pixel values to globalBrightnessCap instead.
-  for (uint8_t s = 0; s < 9; ++s) strips[s]->clear();
+  // Clear node colour cache
+  for (uint8_t s = 0; s < 9; ++s) {
+    const uint8_t nodes = NODES_PER_STRAND[s];
+    for (uint8_t n = 0; n < nodes; ++n) {
+      NodeColor &nc = nodeColors[s][n];
+      nc.present = false;
+      for (uint8_t r = 0; r < 3; ++r) {
+        nc.r[r] = 0;
+        nc.g[r] = 0;
+        nc.b[r] = 0;
+      }
+    }
+  }
 
+  // Decode per-node ring colours into cache.
   for (uint8_t i = 0; i < nodeCount; ++i) {
-    uint8_t strandIn = buf[offset++];
-    uint8_t nodeIndexIn = buf[offset++];
-    if (strandIn >= 9) { offset += 9; continue; }
+    const uint8_t strandIn = buf[offset++];
+    const uint8_t nodeIndexIn = buf[offset++];
+    if (strandIn >= 9) {
+      offset += 9;
+      continue;
+    }
+    const uint8_t maxNodes = NODES_PER_STRAND[strandIn];
+    if (nodeIndexIn >= maxNodes) {
+      offset += 9;
+      continue;
+    }
+
+    NodeColor &nc = nodeColors[strandIn][nodeIndexIn];
+    nc.present = true;
 
     for (uint8_t ring = 0; ring < 3; ++ring) {
       uint8_t r = buf[offset++];
@@ -167,13 +233,109 @@ void applyFrameFromBuffer(const uint8_t *buf, uint16_t len) {
       if (r > globalBrightnessCap) r = globalBrightnessCap;
       if (g > globalBrightnessCap) g = globalBrightnessCap;
       if (b > globalBrightnessCap) b = globalBrightnessCap;
+      nc.r[ring] = r;
+      nc.g[ring] = g;
+      nc.b[ring] = b;
+    }
+  }
 
-      uint32_t start, end;
-      if (!getRingRange(strandIn, nodeIndexIn, ring, start, end)) continue;
+  // Strip brightness stays at 255; we clamp pixel values to globalBrightnessCap instead
+  // and now render either solid rings or spiral trails per node.
+  for (uint8_t s = 0; s < 9; ++s) {
+    strips[s]->clear();
+  }
 
-      const uint16_t base = STRAND_OFFSET[strandIn];
-      for (uint32_t ledIndex = start; ledIndex < end; ++ledIndex)
-        strips[strandIn]->setPixelColor((uint16_t)(ledIndex - base), r, g, b);
+  const uint32_t nowMs = millis();
+
+  for (uint8_t strand = 0; strand < 9; ++strand) {
+    const uint8_t nodes = NODES_PER_STRAND[strand];
+    const StrandType type = STRAND_TYPES[strand];
+    const uint8_t *ringLeds = (type == STRAND_SMALL) ? SMALL_RING_LEDS : LARGE_RING_LEDS;
+    const uint8_t perNode = (type == STRAND_SMALL) ? SMALL_NODE_LEDS : LARGE_NODE_LEDS;
+
+    for (uint8_t n = 0; n < nodes; ++n) {
+      NodeColor &nc = nodeColors[strand][n];
+      if (!nc.present) continue;
+
+      uint32_t nodeBase = STRAND_OFFSET[strand] + (uint32_t)n * perNode;
+      uint32_t nodeEnd = nodeBase + perNode;
+
+      if (!spiralModeActive) {
+        // Original behaviour: fill entire rings with the supplied colours.
+        for (uint8_t ring = 0; ring < 3; ++ring) {
+          uint32_t start, end;
+          if (!getRingRange(strand, n, ring, start, end)) continue;
+          const uint16_t base = STRAND_OFFSET[strand];
+          const uint8_t r = nc.r[ring];
+          const uint8_t g = nc.g[ring];
+          const uint8_t b = nc.b[ring];
+          for (uint32_t ledIndex = start; ledIndex < end; ++ledIndex) {
+            strips[strand]->setPixelColor((uint16_t)(ledIndex - base), r, g, b);
+          }
+        }
+        continue;
+      }
+
+      // Spiral mode: animate a trail along the LEDs that belong to this node.
+      // Trail direction is chosen per node using a deterministic hash, mixed with
+      // the global dirMixGlobal so you can control how many nodes run reversed.
+      const uint16_t hDir = nodeHash(strand, n);
+      const float rndDir = (float)hDir / 65535.0f;
+      const int8_t dir = (rndDir < dirMixGlobal) ? -1 : 1;
+      const uint16_t nodeLeds = (uint16_t)(nodeEnd - nodeBase);
+      if (nodeLeds == 0) continue;
+
+      // Speed and phase: stagger per node so they don't all align. Global
+      // speed comes from speedByte (0..255) via speedNormGlobal.
+      const float baseSpeed = 0.05f;   // very slow
+      const float extraSpeed = 0.45f;  // additional range
+      const float speed = baseSpeed + extraSpeed * speedNormGlobal; // LEDs per ms (scaled below)
+      const float t = (float)nowMs * speed;
+      const uint16_t phase = (uint16_t)((strand * 37u + n * 53u) % nodeLeds);
+      uint16_t head = (uint16_t)((uint32_t)t / 8u); // reduce speed a bit
+      head = (uint16_t)((head + phase) % nodeLeds);
+
+      uint8_t width = spiralWidthIndices;
+      if (width == 0 || width > nodeLeds) width = (nodeLeds < 10) ? nodeLeds : 6;
+
+      // For each ring, walk its LEDs and apply a directional tail from head.
+      for (uint8_t ring = 0; ring < 3; ++ring) {
+        uint32_t start, end;
+        if (!getRingRange(strand, n, ring, start, end)) continue;
+        const uint16_t base = STRAND_OFFSET[strand];
+
+        const uint8_t cr = nc.r[ring];
+        const uint8_t cg = nc.g[ring];
+        const uint8_t cb = nc.b[ring];
+        if (cr == 0 && cg == 0 && cb == 0) continue;
+
+        for (uint32_t ledIndex = start; ledIndex < end; ++ledIndex) {
+          const uint16_t local = (uint16_t)(ledIndex - nodeBase);
+
+          // Compute signed distance along spiral direction: 0 at head, increasing
+          // behind the head, negative ahead of it (no light).
+          int16_t delta = (int16_t)local - (int16_t)head;
+          if (dir < 0) delta = -delta;
+
+          if (delta < 0) {
+            // Ahead of the head: off
+            continue;
+          }
+
+          uint16_t d = (uint16_t)delta;
+          if (d >= nodeLeds) d = (uint16_t)(d % nodeLeds);
+          if (d >= width) continue;
+
+          // Fade from head (d=0, full) to tail (d=width-1, near zero).
+          const float u = (width <= 1) ? 0.0f : (float)d / (float)(width - 1u);
+          const float falloff = 1.0f - u; // simple linear tail
+          const uint8_t fr = (uint8_t)((float)cr * falloff);
+          const uint8_t fg = (uint8_t)((float)cg * falloff);
+          const uint8_t fb = (uint8_t)((float)cb * falloff);
+
+          strips[strand]->setPixelColor((uint16_t)(ledIndex - base), fr, fg, fb);
+        }
+      }
     }
   }
 }
