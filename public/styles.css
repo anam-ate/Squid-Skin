@@ -315,6 +315,19 @@ main {
   text-align: left;
 }
 
+.preset-colours {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.preset-colours input[type="color"] {
+  min-height: 2.25rem;
+  width: 2.6rem;
+  padding: 0.15rem;
+  border-radius: 10px;
+}
+
 .preset-block[aria-disabled="true"] {
   opacity: 0.6;
 }
