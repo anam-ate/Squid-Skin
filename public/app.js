@@ -242,6 +242,12 @@ function applyPreset(idx) {
   setActivePresetIndex(idx);
 }
 
+function setPresetEnabled(enabled) {
+  if (!controls.presetEnable) return;
+  controls.presetEnable.checked = !!enabled;
+  persistControl(controls.presetEnable);
+}
+
 function includedPresetIndices() {
   const includes = [
     controls.presetInclude0,
@@ -741,8 +747,18 @@ function setupControls() {
       };
       saveColorPresets(colorPresets);
 
-      // If this is currently active, update the label and keep the pickers in sync.
-      if (getActivePresetIndex() === i) setActivePresetLabel(i);
+      // If this is currently active, apply to main ring colours immediately so
+      // the canvas/LED preview updates in realtime.
+      if (getActivePresetIndex() === i) {
+        const pNow = colorPresets[i];
+        if (controls.innerColor) controls.innerColor.value = pNow.inner;
+        if (controls.middleColor) controls.middleColor.value = pNow.middle;
+        if (controls.outerColor) controls.outerColor.value = pNow.outer;
+        persistControl(controls.innerColor);
+        persistControl(controls.middleColor);
+        persistControl(controls.outerColor);
+        setActivePresetLabel(i);
+      }
     };
 
     t.inner?.addEventListener('input', onChange);
@@ -965,7 +981,7 @@ function setupControls() {
     persistControl(controls.colorVariation);
   });
 
-  // Presets: enable/disable + include toggles + apply buttons + cycling
+  // Presets: enable/disable + exclusive preset selection + apply buttons + cycling
   const presetIncludeEls = [
     controls.presetInclude0,
     controls.presetInclude1,
@@ -973,8 +989,32 @@ function setupControls() {
     controls.presetInclude3,
     controls.presetInclude4,
   ];
-  presetIncludeEls.forEach((el) => {
-    el?.addEventListener('change', () => persistControl(el));
+  const setExclusiveInclude = (idx, checked) => {
+    for (let i = 0; i < presetIncludeEls.length; i++) {
+      const el = presetIncludeEls[i];
+      if (!el) continue;
+      const want = checked && i === idx;
+      if (el.checked !== want) el.checked = want;
+      persistControl(el);
+    }
+  };
+  presetIncludeEls.forEach((el, idx) => {
+    el?.addEventListener('change', () => {
+      const isChecked = !!el.checked;
+      if (isChecked) {
+        // Selecting a preset overrides all others.
+        setPresetEnabled(true);
+        setExclusiveInclude(idx, true);
+        applyPreset(idx);
+        return;
+      }
+      // If user unticks the active preset, clear active.
+      persistControl(el);
+      if (getActivePresetIndex() === idx) {
+        setActivePresetIndex(-1);
+        setActivePresetLabel(-1);
+      }
+    });
   });
   controls.presetEnable?.addEventListener('change', () => {
     persistControl(controls.presetEnable);
@@ -993,6 +1033,7 @@ function setupControls() {
   presetApplyEls.forEach((btn, idx) => {
     btn?.addEventListener('click', () => {
       if (controls.presetEnable && !controls.presetEnable.checked) return;
+      setExclusiveInclude(idx, true);
       applyPreset(idx);
     });
   });
@@ -1026,20 +1067,14 @@ function setupControls() {
   controls.audioDebug.dispatchEvent(new Event('change'));
   controls.colorVariation.dispatchEvent(new Event('input'));
 
-  // Presets: default include all if none stored yet.
-  if (controls.presetInclude0 && controls.presetInclude1 && controls.presetInclude2 && controls.presetInclude3 && controls.presetInclude4) {
-    const anyIncluded = presetIncludeEls.some((el) => el && el.checked);
-    if (!anyIncluded) {
-      presetIncludeEls.forEach((el) => {
-        if (!el) return;
-        el.checked = true;
-        persistControl(el);
-      });
-    }
-  }
+  // Presets: if none selected, keep none selected (exclusive selection UX).
 
   // Restore active preset label from storage (do not auto-apply to avoid overriding stored picker values).
-  setActivePresetLabel(getActivePresetIndex());
+  const activeIdx = getActivePresetIndex();
+  setActivePresetLabel(activeIdx);
+  if (activeIdx >= 0) {
+    setExclusiveInclude(activeIdx, true);
+  }
 }
 
 setupControls();
